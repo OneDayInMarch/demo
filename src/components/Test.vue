@@ -6,8 +6,8 @@
         <el-button type="primary" @click="dialogVisible = true">字段配置</el-button>
     </div>
     <div>
-        <el-table :data="tableData" style="width:100%" row-key="id" border 
-        :tree-props="{children: 'children', hasChildren: 'hasChildren'}" 
+        <el-table :data="tableData" style="width:100%" :row-key="getRowKey" border
+        :tree-props="{children: 'children'}"  type="expand" ref="table"
         :expand-row-keys="expandRowKeys"
         stripe sortable="true">
                 <el-table-column :prop="col.prop" :label="col.label" v-for="(col,index) in activeFields" :key="index" icon="el-icon-search" ></el-table-column>
@@ -34,7 +34,7 @@
         <el-tabs v-model="activeName">
             <el-tab-pane label="字段选择" name="fieldsChosen">
                 <el-checkbox :indeterminate="isIndeterminate" v-model="checkAll" @change="handleCheckAllChange">全部</el-checkbox>
-                <div style="margin:15px 0;"></div>                
+                <div style="margin:15px 0;"></div>
                 <el-checkbox-group  v-model="checkedColumns" @change="handleCheckedList">
                     <div>
                         <el-checkbox style="width:40%;" v-for="item in columns" :label="item" :key="item">{{item}}</el-checkbox>
@@ -172,19 +172,43 @@ export default {
         })
     }
   },
+  mounted(){
+    this.tableDataHandle(this.tableData, 'children')
+  },
   methods:{
+
+    // 数据处理
+    tableDataHandle(arr, key, level = 0, indexLine = []) {
+      level = level + 1
+      arr.map((item, idx) => {
+        item.level = level
+        item.indexLine = Object.assign([], indexLine)
+        item.indexLine.push(idx)
+        item.parentLength = arr.length
+        if (item[key]) {
+          this.tableDataHandle(item[key], key, level, item.indexLine)
+        }
+      })
+      return arr
+    },
+    forTableData(arr,isExpand){
+        arr.forEach(i =>{
+            this.$refs.table.toggleRowExpansion(i,isExpand);
+            if(i.children){
+                this.forTableData(i.children,isExpand)
+        }})
+    },
     // 全部关闭
     closeAll() {
-        const arr=[]
-        this.expandRowKeys = arr
-        console.log(this.expandRowKeys)
-        //全部关闭数组置空失败
+        this.forTableData(this.tableData,false)
     },
     // 全部打开
     openAll() {
-      this.expandRowKeys = this.tableData.map((item) => {
-        return item.id
-      })
+        this.forTableData(this.tableData,true)
+    },
+
+    getRowKey(v){
+      return v.id
     },
     beforeHandleCommand(index,row,command) {
         return {
@@ -202,25 +226,25 @@ export default {
                 this.edit(command.index);
                 break;
             case "delete":
-                this.delete(command.index);
+                this.rowOperation(command.row.indexLine,"delete",command.row);
                 break;
             case "moveTop":
-                this.moveTop(command.index);
+                this.rowOperation(command.row.indexLine,"moveTop",command.row);
                 break;
             case "moveUp":
-                this.moveUp(command.index);
+                this.rowOperation(command.row.indexLine,"moveUp",command.row);
                 break;
             case "moveDown":
-                this.moveDown(command.index);
+                this.rowOperation(command.row.indexLine,"moveDown",command.row);
                 break;
             case "moveBottom":
-                this.moveBottom(command.index);
+                this.rowOperation(command.row.indexLine,"moveBottom",command.row);
                 break;
         }
     },
     handleCheckAllChange(val){
         this.checkedColumns = val ? columnOptions : [];
-        this.isIndeterminate = false;    
+        this.isIndeterminate = false;
     },
     handleCheckedList(val){
         this.checkedColumns=val;
@@ -233,7 +257,7 @@ export default {
         this.fieldList=columnOptions;
     },
     submit(){
-        this.dialogVisible=false; 
+        this.dialogVisible=false;
         //更新表格展示列
         this.fields.forEach((item)=>{
             item.visible=false;
@@ -260,47 +284,62 @@ export default {
     },
 
     edit(index,row){
-        
+
     },
-    delete(index) {
-       this.tableData.splice(index,1);
-    },
-    // 置顶
-    moveTop(index) {
-       // 将要置顶的元素存储后删除
-       const temp = this.tableData.splice(index, 1)[0];
+    rowOperation(target,flag,row) {
+      let temTable
+      if (target.length == 1) {
+        temTable = this.tableData
+      } else {
+        temTable = this.getParent(target).children
+      }
+      let index = target[target.length - 1]
+      if(flag === "moveTop"){ // 置顶
        // 将元素unshift到数组第一位
-       this.tableData.unshift(temp);
-    },
-    // 置底
-    moveBottom(index) {
-      // 将要置底的元素存储后删除
-      const temp = this.tableData.splice(index, 1)[0];
-      // 将元素push到数组最后一位
-      this.tableData.push(temp);
-    },
-    // 调整顺序，arr 数组，indexAdd 添加元素的位置，indexDel 删除元素的位置（indexAdd与indexDel交换位置）
-    handleChangeOrder(arr, indexAdd, indexDel) {
-      arr[indexAdd] = arr.splice(indexDel, 1, arr[indexAdd])[0];
-      return arr;
-    },
-    // 上移，与前一个元素交换顺序
-    moveUp(index) {
-      this.handleChangeOrder(this.tableData, index, index - 1);
-    },
-    // 下移，与后一个元素交换顺序
-    moveDown(index) {
-      this.handleChangeOrder(this.tableData, index, index + 1);
+        temTable.splice(index, 1);
+        temTable.unshift(row)
+        this.tableDataHandle(this.tableData, 'children')
+        return
+      }
+      if(flag === "moveBottom"){
+        temTable.splice(index, 1);
+        temTable.push(row)
+        this.tableDataHandle(this.tableData, 'children')
+        return;
+      }
+      if (flag === "moveUp") { //上移
+        let upData = temTable[index - 1]
+        temTable.splice(index - 1, 1);
+        temTable.splice(index, 0, upData);
+      }
+      if(flag ==="moveDown")
+      { //下移
+        let downData = temTable[index + 1]
+        temTable.splice(index + 1, 1);
+        temTable.splice(index, 0, downData);
+      }
+       if(flag =="delete")
+      { //删除
+        temTable.splice(index,1);
+      }
+        this.tableDataHandle(this.tableData, 'children')
+
     },
 
+    getParent(target) {
+        if(target.length==1){
+            return this.tableData;
+        }else if(target.length==2) {
+            return this.tableData[target[0]];
+        } else if(target.length>2) {
+            return this.getParent(target.length-1).children[target[target.length-2]];
+        }
+    }
   }
 }
 </script>
 
 <style scoped>
-/* #PointerIcon {
-    transform:rotate(90deg);
-} */
 .title{
     float: left;
 }
